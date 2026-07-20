@@ -1,0 +1,11 @@
+[package]
+name = "vapor_entrypoint"
+version.workspace = true
+edition.workspace = true
+readme = "../../README.md"
+
+[[bin]]
+name = "vapor-entrypoint"
+path = "src/main.rs"
+
+[dependencies]
