@@ -1,6 +1,6 @@
 //! Steam-facing terminal entrypoint for Vapor.
 //!
-//! This binary deliberately does not understand Vapor launch modes. Steam
+//! This binary deliberately does not understand Vapor launch targets. Steam
 //! starts this executable, it opens the platform terminal, forwards every
 //! argument to the existing `bin/vapor-launch.*` script, waits for that
 //! terminal to close, and exits with the terminal status.
@@ -124,9 +124,8 @@ fn launch_terminal(
                 .arg(format!("PATH={}", linux_child_path(app_root)))
                 .arg(format!("VAPOR_APP_ROOT={}", app_root.display()))
                 .arg("VAPOR_STEAM_LAUNCH=1")
-                .arg("VAPOR_TERMINAL_RELAUNCHED=1")
-                .arg("VAPOR_LAUNCHER_TERMINAL=1")
-                .arg("VAPOR_LAUNCHER_HOLD_ON_EXIT=1")
+                .arg("VAPOR_LAUNCH_TERMINAL=1")
+                .arg("VAPOR_LAUNCH_HOLD=1")
                 .arg(format!("VAPOR_ENTRYPOINT_LOG={}", log.path().display()))
                 .arg(script)
                 .args(arguments)
@@ -267,9 +266,8 @@ fn configure_child_environment(command: &mut Command, app_root: &Path, log: &Ent
     command
         .env("VAPOR_APP_ROOT", app_root)
         .env("VAPOR_STEAM_LAUNCH", "1")
-        .env("VAPOR_TERMINAL_RELAUNCHED", "1")
-        .env("VAPOR_LAUNCHER_TERMINAL", "1")
-        .env("VAPOR_LAUNCHER_HOLD_ON_EXIT", "1")
+        .env("VAPOR_LAUNCH_TERMINAL", "1")
+        .env("VAPOR_LAUNCH_HOLD", "1")
         .env("VAPOR_ENTRYPOINT_LOG", log.path());
 }
 
