@@ -1,9 +1,10 @@
 //! Steam-facing terminal entrypoint for Vapor.
 //!
 //! This binary deliberately does not understand Vapor launch targets. Steam
-//! starts this executable, it opens the platform terminal, forwards every
-//! argument to the existing `bin/vapor-launch.*` script, waits for that
-//! terminal to close, and exits with the terminal status.
+//! starts this executable, it opens the platform terminal, starts the existing
+//! `bin/vapor-launch.*` script with the internal `--hold` wrapper flag,
+//! forwards Steam's launch arguments after that flag, waits for that terminal
+//! to close, and exits with the terminal status.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
@@ -122,12 +123,8 @@ fn launch_terminal(
                 .arg("-e")
                 .arg("/usr/bin/env")
                 .arg(format!("PATH={}", linux_child_path(app_root)))
-                .arg(format!("VAPOR_APP_ROOT={}", app_root.display()))
-                .arg("VAPOR_STEAM_LAUNCH=1")
-                .arg("VAPOR_LAUNCH_TERMINAL=1")
-                .arg("VAPOR_LAUNCH_HOLD=1")
-                .arg(format!("VAPOR_ENTRYPOINT_LOG={}", log.path().display()))
                 .arg(script)
+                .arg("--hold")
                 .args(arguments)
                 .current_dir(app_root)
                 .env_remove("LD_LIBRARY_PATH")
@@ -169,9 +166,9 @@ fn launch_terminal(
         .arg(app_root)
         .arg("-e")
         .arg(script)
+        .arg("--hold")
         .args(arguments)
         .current_dir(app_root);
-    configure_child_environment(&mut command, app_root, log);
     wait_for_terminal(command, "Konsole", log)
 }
 
@@ -194,15 +191,15 @@ fn launch_terminal(
         .args(["/D", "/C"])
         .raw_arg(payload)
         .current_dir(app_root);
-    configure_child_environment(&mut command, app_root, log);
     wait_for_terminal(command, "Command Prompt", log)
 }
 
 #[cfg(windows)]
 fn windows_cmd_payload(arguments: &[OsString]) -> String {
     let mut command = format!(
-        "call {}",
-        quote_windows_cmd_part(OsStr::new(r"bin\vapor-launch.cmd"))
+        "call {} {}",
+        quote_windows_cmd_part(OsStr::new(r"bin\vapor-launch.cmd")),
+        quote_windows_cmd_part(OsStr::new("--hold"))
     );
     for argument in arguments {
         command.push(' ');
@@ -260,15 +257,6 @@ fn launch_terminal(
     );
     log.write(&message);
     Err(message)
-}
-
-fn configure_child_environment(command: &mut Command, app_root: &Path, log: &EntryLog) {
-    command
-        .env("VAPOR_APP_ROOT", app_root)
-        .env("VAPOR_STEAM_LAUNCH", "1")
-        .env("VAPOR_LAUNCH_TERMINAL", "1")
-        .env("VAPOR_LAUNCH_HOLD", "1")
-        .env("VAPOR_ENTRYPOINT_LOG", log.path());
 }
 
 fn wait_for_terminal(
@@ -351,10 +339,6 @@ impl EntryLog {
                 .ok()
         });
         Self { path, file }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
     }
 
     fn stderr(&self) -> Option<File> {

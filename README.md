@@ -4,9 +4,10 @@ Vapor Entrypoint is the Steam-facing terminal adapter for the installed Vapor
 app.
 
 It intentionally does not understand Vapor launch targets. Steam starts
-`vapor-entrypoint[.exe]`, the entrypoint opens the platform terminal, forwards
-all arguments unchanged to the matching app-local launch script, waits for the
-terminal to close, and exits with that terminal status.
+`vapor-entrypoint[.exe]`, the entrypoint opens the platform terminal, starts
+the matching app-local launch script with the internal `--hold` wrapper flag,
+forwards Steam's launch arguments after that flag, waits for the terminal to
+close, and exits with that terminal status.
 
 Runtime paths:
 
