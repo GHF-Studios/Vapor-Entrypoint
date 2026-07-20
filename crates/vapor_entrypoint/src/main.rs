@@ -192,7 +192,7 @@ fn launch_terminal(
     log.write(format!("command prompt payload={payload}"));
     let mut command = Command::new(shell);
     command
-        .args(["/D", "/K"])
+        .args(["/D", "/C"])
         .raw_arg(payload)
         .current_dir(app_root);
     configure_child_environment(&mut command, app_root, log);
