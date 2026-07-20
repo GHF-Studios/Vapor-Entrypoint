@@ -17,6 +17,11 @@ use std::{
     time::SystemTime,
 };
 
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 fn main() {
     let status = match run() {
         Ok(status) => status.code().unwrap_or(1),
@@ -183,17 +188,42 @@ fn launch_terminal(
         "launching command prompt through {}",
         PathBuf::from(&shell).display()
     ));
-    log.write(format!(
-        "command prompt command=/D /K call bin\\vapor-launch.cmd {:?}",
-        arguments
-    ));
+    let payload = windows_cmd_payload(arguments);
+    log.write(format!("command prompt payload={payload}"));
     let mut command = Command::new(shell);
     command
-        .args(["/D", "/K", "call", r"bin\vapor-launch.cmd"])
-        .args(arguments)
+        .args(["/D", "/K"])
+        .raw_arg(payload)
         .current_dir(app_root);
     configure_child_environment(&mut command, app_root, log);
     wait_for_terminal(command, "Command Prompt", log)
+}
+
+#[cfg(windows)]
+fn windows_cmd_payload(arguments: &[OsString]) -> String {
+    let mut command = format!(
+        "call {}",
+        quote_windows_cmd_part(OsStr::new(r"bin\vapor-launch.cmd"))
+    );
+    for argument in arguments {
+        command.push(' ');
+        command.push_str(&quote_windows_cmd_part(argument));
+    }
+    format!("\"{command}\"")
+}
+
+#[cfg(windows)]
+fn quote_windows_cmd_part(value: &OsStr) -> String {
+    let mut quoted = String::from("\"");
+    for character in value.to_string_lossy().chars() {
+        if character == '"' {
+            quoted.push_str("\"\"");
+        } else {
+            quoted.push(character);
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 #[cfg(windows)]
