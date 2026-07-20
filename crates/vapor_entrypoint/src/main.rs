@@ -17,9 +17,6 @@ use std::{
     time::SystemTime,
 };
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
 fn main() {
     let status = match run() {
         Ok(status) => status.code().unwrap_or(1),
@@ -40,6 +37,7 @@ fn run() -> Result<ExitStatus, String> {
             executable.display()
         )
     })?;
+    let app_root = shell_safe_app_root(app_root);
     let mut log = EntryLog::open(&app_root);
     let arguments: Vec<OsString> = env::args_os().skip(1).collect();
     log.write(format!(
@@ -176,7 +174,7 @@ fn launch_terminal(
 #[cfg(windows)]
 fn launch_terminal(
     app_root: &Path,
-    script: &Path,
+    _script: &Path,
     arguments: &[OsString],
     log: &mut EntryLog,
 ) -> Result<ExitStatus, String> {
@@ -185,38 +183,39 @@ fn launch_terminal(
         "launching command prompt through {}",
         PathBuf::from(&shell).display()
     ));
-    let payload = windows_cmd_payload(script, arguments);
-    log.write(format!("command prompt payload={payload}"));
+    log.write(format!(
+        "command prompt command=/D /K call bin\\vapor-launch.cmd {:?}",
+        arguments
+    ));
     let mut command = Command::new(shell);
     command
-        .raw_arg(format!("/D /K {payload}"))
+        .args(["/D", "/K", "call", r"bin\vapor-launch.cmd"])
+        .args(arguments)
         .current_dir(app_root);
     configure_child_environment(&mut command, app_root, log);
     wait_for_terminal(command, "Command Prompt", log)
 }
 
 #[cfg(windows)]
-fn windows_cmd_payload(script: &Path, arguments: &[OsString]) -> String {
-    let mut payload = format!("call {}", quote_for_cmd(script.as_os_str()));
-    for argument in arguments {
-        payload.push(' ');
-        payload.push_str(&quote_for_cmd(argument));
-    }
-    payload
+fn shell_safe_app_root(path: PathBuf) -> PathBuf {
+    strip_windows_verbatim_prefix(&path)
+}
+
+#[cfg(not(windows))]
+fn shell_safe_app_root(path: PathBuf) -> PathBuf {
+    path
 }
 
 #[cfg(windows)]
-fn quote_for_cmd(value: &std::ffi::OsStr) -> String {
-    let mut quoted = String::from("\"");
-    for character in value.to_string_lossy().chars() {
-        if character == '"' {
-            quoted.push_str("\"\"");
-        } else {
-            quoted.push(character);
-        }
+fn strip_windows_verbatim_prefix(path: &Path) -> PathBuf {
+    let path = path.as_os_str().to_string_lossy();
+    if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{path}"));
     }
-    quoted.push('"');
-    quoted
+    if let Some(path) = path.strip_prefix(r"\\?\") {
+        return PathBuf::from(path);
+    }
+    PathBuf::from(path.as_ref())
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
