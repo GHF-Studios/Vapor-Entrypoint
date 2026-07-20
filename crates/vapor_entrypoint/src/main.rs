@@ -17,6 +17,9 @@ use std::{
     time::SystemTime,
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 fn main() {
     let status = match run() {
         Ok(status) => status.code().unwrap_or(1),
@@ -182,14 +185,38 @@ fn launch_terminal(
         "launching command prompt through {}",
         PathBuf::from(&shell).display()
     ));
+    let payload = windows_cmd_payload(script, arguments);
+    log.write(format!("command prompt payload={payload}"));
     let mut command = Command::new(shell);
     command
-        .args(["/D", "/K", "call"])
-        .arg(script)
-        .args(arguments)
+        .raw_arg(format!("/D /K {payload}"))
         .current_dir(app_root);
     configure_child_environment(&mut command, app_root, log);
     wait_for_terminal(command, "Command Prompt", log)
+}
+
+#[cfg(windows)]
+fn windows_cmd_payload(script: &Path, arguments: &[OsString]) -> String {
+    let mut payload = format!("call {}", quote_for_cmd(script.as_os_str()));
+    for argument in arguments {
+        payload.push(' ');
+        payload.push_str(&quote_for_cmd(argument));
+    }
+    payload
+}
+
+#[cfg(windows)]
+fn quote_for_cmd(value: &std::ffi::OsStr) -> String {
+    let mut quoted = String::from("\"");
+    for character in value.to_string_lossy().chars() {
+        if character == '"' {
+            quoted.push_str("\"\"");
+        } else {
+            quoted.push(character);
+        }
+    }
+    quoted.push('"');
+    quoted
 }
 
 #[cfg(not(any(target_os = "linux", windows)))]
