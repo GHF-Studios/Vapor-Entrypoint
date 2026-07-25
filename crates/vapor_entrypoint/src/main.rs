@@ -50,7 +50,7 @@ fn run() -> Result<ExitStatus, String> {
         "entrypoint executable={} app_root={} args={:?}",
         executable.display(),
         app_root.display(),
-        arguments
+        redacted_arguments(&arguments)
     ));
 
     let script = platform_script(&app_root);
@@ -185,7 +185,10 @@ fn launch_terminal(
         PathBuf::from(&shell).display()
     ));
     let payload = windows_cmd_payload(arguments);
-    log.write(format!("command prompt payload={payload}"));
+    log.write(format!(
+        "command prompt args={:?}",
+        redacted_arguments(arguments)
+    ));
     let mut command = Command::new(shell);
     command
         .args(["/D", "/C"])
@@ -307,19 +310,91 @@ fn host_library_path() -> &'static std::ffi::OsStr {
 fn linux_child_path(app_root: &Path) -> String {
     let mut paths = vec![
         app_root.join("bin/x86_64-unknown-linux-gnu"),
-        app_root.join("cargo-home/bin"),
-        app_root.join("rustup/bin"),
-        app_root.join("tools/steamcmd"),
+        app_root.join("bin"),
         PathBuf::from("/usr/bin"),
         PathBuf::from("/bin"),
     ];
     if let Some(existing) = env::var_os("PATH") {
-        paths.extend(env::split_paths(&existing));
+        paths.extend(
+            env::split_paths(&existing).filter(|path| !is_raw_app_tool_path(app_root, path)),
+        );
     }
     env::join_paths(paths)
         .unwrap_or_else(|_| OsString::from("/usr/bin:/bin"))
         .to_string_lossy()
         .into_owned()
+}
+
+#[cfg(target_os = "linux")]
+fn is_raw_app_tool_path(app_root: &Path, path: &Path) -> bool {
+    let raw_exact = [
+        app_root.join("cargo-home/bin"),
+        app_root.join("rustup/bin"),
+        app_root.join("tools/steamcmd"),
+        app_root.join("tools/zig"),
+        app_root.join("tools/cross/bin"),
+        app_root.join("tools/llvm-mingw/bin"),
+    ];
+    if raw_exact.iter().any(|raw| path == raw) {
+        return true;
+    }
+    let toolchains = app_root.join("rustup-home/toolchains");
+    path.starts_with(&toolchains) && path.file_name().is_some_and(|name| name == "bin")
+}
+
+fn redacted_arguments(arguments: &[OsString]) -> Vec<String> {
+    let mut redact_next = false;
+    let mut redacted = Vec::new();
+    for argument in arguments {
+        let argument = argument.to_string_lossy();
+        if redact_next {
+            redacted.push("<redacted>".to_owned());
+            redact_next = false;
+            continue;
+        }
+        if let Some((name, _)) = argument.split_once('=')
+            && is_sensitive_name(name.trim_start_matches('-'))
+        {
+            redacted.push(format!("{name}=<redacted>"));
+            continue;
+        }
+        let name = argument.trim_start_matches('-');
+        if argument.starts_with('-') && is_sensitive_name(name) {
+            redacted.push(argument.into_owned());
+            redact_next = true;
+        } else {
+            redacted.push(argument.into_owned());
+        }
+    }
+    redacted
+}
+
+fn is_sensitive_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if [
+        "password",
+        "passwd",
+        "token",
+        "secret",
+        "credential",
+        "credentials",
+        "cookie",
+        "authorization",
+        "refresh_token",
+        "access_token",
+        "authticket",
+        "auth_ticket",
+        "sessionticket",
+        "session_ticket",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+    {
+        return true;
+    }
+    lower
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|part| matches!(part, "key" | "auth" | "ticket"))
 }
 
 struct EntryLog {
@@ -353,5 +428,33 @@ impl EntryLog {
         if let Some(file) = &mut self.file {
             let _ = writeln!(file, "[{:?}] {}", SystemTime::now(), message.as_ref());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacts_sensitive_forwarded_arguments() {
+        let args = redacted_arguments(&[
+            OsString::from("play"),
+            OsString::from("--api-key"),
+            OsString::from("abc123"),
+            OsString::from("--token=secret"),
+            OsString::from("--account"),
+            OsString::from("tester"),
+        ]);
+        assert_eq!(
+            args,
+            [
+                "play",
+                "--api-key",
+                "<redacted>",
+                "--token=<redacted>",
+                "--account",
+                "tester"
+            ]
+        );
     }
 }
