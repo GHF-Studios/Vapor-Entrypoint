@@ -25,6 +25,6 @@ Logs go to:
 <app-root>/.vapor/logs/entrypoint.log
 ```
 
-The launch scripts, Vapor Installer, and Vapor Shell own all product behavior.
-This project owns only app-root discovery, terminal launch, argument forwarding,
-and entrypoint logging.
+The launch scripts, app-root tool layer, `vapor-installer`, and Vapor Shell own
+all product behavior. This project owns only app-root discovery, terminal
+launch, argument forwarding, and entrypoint logging.
